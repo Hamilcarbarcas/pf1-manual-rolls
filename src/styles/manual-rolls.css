@@ -1,0 +1,129 @@
+/* Kind colors (DESIGN.md §5). Tokens, so they restyle in one place. */
+.pf1-manual-rolls {
+  --pf1mr-kind-attack: #c0392b;
+  --pf1mr-kind-confirmation: #e67e22;
+  --pf1mr-kind-damage: #8e44ad;
+  --pf1mr-kind-healing: #27ae60;
+  --pf1mr-kind-skill: #2980b9;
+  --pf1mr-kind-save: #16a085;
+  --pf1mr-kind-ability: #d4ac0d;
+  --pf1mr-kind-initiative: #7f8c8d;
+  --pf1mr-kind-caster: #5dade2;
+  --pf1mr-kind-other: #95a5a6;
+}
+
+/* Chat-bar toggle */
+#chat-controls #pf1-manual-rolls-toggle {
+  position: relative;
+  margin-inline-end: auto;
+  margin-inline-start: 4px;
+}
+#chat-notifications #chat-controls #pf1-manual-rolls-toggle {
+  display: block;
+  margin: 4px 0 0;
+}
+#chat-controls #pf1-manual-rolls-toggle.filtered::after {
+  content: "";
+  position: absolute;
+  inset: auto 3px 3px auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-warm-1, #ee9b3a);
+}
+#chat-controls #pf1-manual-rolls-toggle[hidden] {
+  display: none;
+}
+
+/* Die filter popover */
+#pf1-manual-rolls-filter {
+  position: fixed;
+  z-index: calc(var(--z-index-tooltip, 100) + 1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #444);
+  border-radius: 6px;
+  background: var(--color-cool-5, #1a1a1d);
+  color: var(--color-text-primary, #ddd);
+  box-shadow: 0 0 10px #000a;
+}
+#pf1-manual-rolls-filter h4 {
+  margin: 0 0 4px;
+  font-size: var(--font-size-13, 13px);
+}
+#pf1-manual-rolls-filter label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#pf1-manual-rolls-filter label i {
+  width: 16px;
+  text-align: center;
+}
+
+/* Prompt window */
+.pf1-manual-rolls .window-content {
+  padding: 6px;
+}
+.pf1-manual-rolls .groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pf1-manual-rolls .group {
+  border: 1px solid var(--color-border, #555);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.pf1-manual-rolls .group-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+.pf1-manual-rolls .row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-inline-start: 4px solid var(--pf1mr-kind-other);
+  margin-bottom: 2px;
+}
+.pf1-manual-rolls .row[data-kind="attack"] { border-inline-start-color: var(--pf1mr-kind-attack); }
+.pf1-manual-rolls .row[data-kind="confirmation"] { border-inline-start-color: var(--pf1mr-kind-confirmation); }
+.pf1-manual-rolls .row[data-kind="damage"] { border-inline-start-color: var(--pf1mr-kind-damage); }
+.pf1-manual-rolls .row[data-kind="healing"] { border-inline-start-color: var(--pf1mr-kind-healing); }
+.pf1-manual-rolls .row[data-kind="skill"] { border-inline-start-color: var(--pf1mr-kind-skill); }
+.pf1-manual-rolls .row[data-kind="save"] { border-inline-start-color: var(--pf1mr-kind-save); }
+.pf1-manual-rolls .row[data-kind="ability"] { border-inline-start-color: var(--pf1mr-kind-ability); }
+.pf1-manual-rolls .row[data-kind="initiative"] { border-inline-start-color: var(--pf1mr-kind-initiative); }
+.pf1-manual-rolls .row[data-kind="caster"] { border-inline-start-color: var(--pf1mr-kind-caster); }
+.pf1-manual-rolls .row .die {
+  text-align: center;
+  font-size: 1.2em;
+}
+.pf1-manual-rolls .row .inputs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 3px;
+  max-width: 220px;
+}
+.pf1-manual-rolls .row .inputs input {
+  width: 42px;
+  text-align: center;
+}
+.pf1-manual-rolls .row .inputs input.invalid {
+  outline: 2px solid var(--color-level-error, #c00);
+}
+.pf1-manual-rolls .group-buttons {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.pf1-manual-rolls .group-buttons button {
+  flex: 0 0 auto;
+  width: auto;
+  padding-inline: 10px;
+}

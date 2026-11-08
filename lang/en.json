@@ -1,0 +1,24 @@
+{
+  "MANUALROLLS": {
+    "Toggle": {
+      "Label": "Manual Rolls",
+      "TooltipOn": "Manual rolls: on. Right-click to choose dice.",
+      "TooltipOff": "Manual rolls: off. Right-click to choose dice.",
+      "NowOn": "Manual rolls on.",
+      "NowOff": "Manual rolls off."
+    },
+    "Filter": {
+      "Title": "Dice to roll by hand",
+      "Other": "Other"
+    },
+    "Keybinding": {
+      "Toggle": "Toggle Manual Rolls"
+    },
+    "Window": {
+      "Title": "Manual Rolls",
+      "Submit": "Submit",
+      "SubmitHint": "Empty dice roll digitally.",
+      "Invalid": "That value doesn't fit the die."
+    }
+  }
+}

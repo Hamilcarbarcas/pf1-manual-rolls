@@ -1,0 +1,24 @@
+<div class="groups">
+  {{#each groups as |group|}}
+  <section class="group" data-group-id="{{group.id}}">
+    <header class="group-title">{{group.title}}</header>
+    {{#each group.rows as |row|}}
+    <div class="row" data-kind="{{row.kind}}">
+      <span class="die">{{{row.icon}}}</span>
+      <span class="label">{{row.label}}{{#if row.extraIcon}} <i class="fa-solid {{row.extraIcon}}"></i>{{/if}}</span>
+      <span class="inputs">
+        {{#each row.inputs as |input|}}
+        <input type="text" inputmode="numeric" autocomplete="off" name="{{input.name}}" value="{{input.value}}"
+               placeholder="{{row.denomination}}" data-row-id="{{row.id}}" data-index="{{@index}}">
+        {{/each}}
+      </span>
+    </div>
+    {{/each}}
+    <footer class="group-buttons">
+      <button type="button" data-action="submitGroup" data-tooltip="MANUALROLLS.Window.SubmitHint">
+        <i class="fa-solid fa-check"></i> {{localize "MANUALROLLS.Window.Submit"}}
+      </button>
+    </footer>
+  </section>
+  {{/each}}
+</div>

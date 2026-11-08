@@ -1,0 +1,51 @@
+{
+  "id": "pf1-manual-rolls",
+  "title": "PF1 Manual Rolls",
+  "description": "<p>Roll physical dice at the table: a chat-bar toggle with a die filter, and one prompt window for every die a roll needs.</p>",
+  "authors": [
+    {
+      "name": "Hamilcarbarcas",
+      "flags": {}
+    }
+  ],
+  "version": "0.0.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "pf1",
+        "type": "system",
+        "compatibility": {
+          "minimum": "11"
+        }
+      }
+    ],
+    "requires": [
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "reason": "Replaces core's dice resolver and answers extra dice from exploding and rerolling."
+      }
+    ]
+  },
+  "esmodules": [
+    "src/pf1-manual-rolls.mjs"
+  ],
+  "styles": [
+    "src/styles/manual-rolls.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "url": "https://github.com/Hamilcarbarcas/pf1-manual-rolls",
+  "readme": "https://github.com/Hamilcarbarcas/pf1-manual-rolls/blob/main/README.md",
+  "manifest": "https://github.com/Hamilcarbarcas/pf1-manual-rolls/releases/latest/download/module.json",
+  "download": "https://github.com/Hamilcarbarcas/pf1-manual-rolls/releases/download/v0.0.0/module.zip"
+}
