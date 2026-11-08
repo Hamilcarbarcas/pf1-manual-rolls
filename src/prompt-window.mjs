@@ -19,6 +19,10 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
  * @property {number} count         Inputs to show.
  * @property {() => number} randomFace  Fills an input left empty.
  * @property {"reroll"|"explode"} [extra]  Marks a single die added by a modifier.
+ * @property {string} [ref]  Slot key; conditional rows point at another row's ref.
+ * @property {{mode: "high"|"low", n: number}} [keep]  Keep/drop modifier; kept dice are highlighted.
+ * @property {{ref: string, critRange: number}} [conditional]  Dimmed until the referenced d20
+ *   threatens; resolves to null if still dimmed at submit (§5 conditional rows).
  */
 
 class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -86,16 +90,21 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
     const groups = [...this.#groups.values()].map((group) => ({
       id: group.id,
       title: group.title,
-      rows: group.rows.map((row) => ({
-        id: row.id,
-        label: row.label,
-        kind: row.kind,
-        icon: row.icon,
-        denomination: row.denomination,
-        faces: row.faces,
-        extraIcon: { reroll: "fa-arrow-rotate-right", explode: "fa-burst" }[row.extra] ?? null,
-        inputs: row.values.map((value, index) => ({ name: `${row.id}.${index}`, value })),
-      })),
+      rows: group.rows.map((row) => {
+        const kept = keptIndices(row);
+        return {
+          id: row.id,
+          label: row.label,
+          kind: row.kind,
+          icon: row.icon,
+          denomination: row.denomination,
+          faces: row.faces,
+          dimmed: isDimmed(group, row),
+          keepLabel: row.keep ? `MANUALROLLS.Window.Keep.${row.keep.mode}` : null,
+          extraIcon: { reroll: "fa-arrow-rotate-right", explode: "fa-burst" }[row.extra] ?? null,
+          inputs: row.values.map((value, index) => ({ name: `${row.id}.${index}`, value, kept: kept.has(index) })),
+        };
+      }),
     }));
     return { groups };
   }
@@ -115,7 +124,7 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
     await super._onRender(context, options);
     const target =
       (this.#focus && this.element.querySelector(`input[name="${this.#focus}"]`)) ||
-      [...this.element.querySelectorAll("input[data-row-id]")].find((input) => input.value === "");
+      [...this.element.querySelectorAll(LIVE_INPUTS)].find((input) => input.value === "");
     if (target) {
       target.focus();
       target.setSelectionRange(target.value.length, target.value.length);
@@ -137,9 +146,10 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!input.matches("input[data-row-id]")) return;
     input.value = input.value.replace(/\D/g, "");
     input.classList.remove("invalid");
-    const row = this.#row(input.dataset.rowId);
+    const { group, row } = this.#locate(input.dataset.rowId);
     if (!row) return;
     row.values[Number(input.dataset.index)] = input.value;
+    this.#refresh(input.closest("[data-group-id]"), group);
     if (isComplete(input.value, row.faces)) this.#focusNext(input);
   }
 
@@ -157,10 +167,26 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
     if (group) this.#submit(group);
   }
 
-  /** Next input in the same group, else that group's submit button. */
+  /** Dimming and kept-die highlights follow the typed values without a re-render. */
+  #refresh(section, group) {
+    if (!section || !group) return;
+    for (const row of group.rows) {
+      const element = section.querySelector(`[data-row="${row.id}"]`);
+      if (!element) continue;
+      const dimmed = isDimmed(group, row);
+      element.classList.toggle("dimmed", dimmed);
+      const kept = keptIndices(row);
+      element.querySelectorAll("input[data-row-id]").forEach((input, index) => {
+        input.tabIndex = dimmed ? -1 : 0;
+        input.classList.toggle("kept", kept.has(index));
+      });
+    }
+  }
+
+  /** Next live input in the same group, else that group's submit button. */
   #focusNext(input) {
     const section = input.closest("[data-group-id]");
-    const inputs = [...section.querySelectorAll("input[data-row-id]")];
+    const inputs = [...section.querySelectorAll(LIVE_INPUTS)];
     const next = inputs[inputs.indexOf(input) + 1] ?? section.querySelector("[data-action=submitGroup]");
     next?.focus();
   }
@@ -175,6 +201,10 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
     const faces = new Map();
     let firstInvalid = null;
     for (const row of group.rows) {
+      if (isDimmed(group, row)) {
+        faces.set(row, null);
+        continue;
+      }
       const values = row.values.map((text) => parseFace(text, row.faces));
       values.forEach((value, index) => {
         if (!Number.isNaN(value) || force || firstInvalid) return;
@@ -191,7 +221,8 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
 
     this.#groups.delete(group.id);
     for (const [row, values] of faces) {
-      row.resolve(values.map((value) => (value === null || Number.isNaN(value) ? row.randomFace() : value)));
+      if (!values) row.resolve(null);
+      else row.resolve(values.map((value) => (value === null || Number.isNaN(value) ? row.randomFace() : value)));
     }
     this.#focus = null;
     if (closing || !this.rendered) return;
@@ -199,13 +230,37 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
     else this.close();
   }
 
-  #row(id) {
+  #locate(id) {
     for (const group of this.#groups.values()) {
       const row = group.rows.find((r) => r.id === id);
-      if (row) return row;
+      if (row) return { group, row };
     }
-    return null;
+    return {};
   }
+}
+
+const LIVE_INPUTS = ".row:not(.dimmed) input[data-row-id]";
+
+/** A conditional row stays dimmed until its d20 is entered and reaches the threat range. */
+function isDimmed(group, row) {
+  if (!row.conditional) return false;
+  const d20 = group.rows.find((r) => r.ref === row.conditional.ref);
+  if (!d20) return false;
+  const values = d20.values.map((text) => parseFace(text, d20.faces));
+  if (values.some((v) => v === null || Number.isNaN(v))) return true;
+  const kept = keptIndices(d20);
+  const total = values.reduce((sum, v, i) => (kept.size && !kept.has(i) ? sum : sum + v), 0);
+  return total < row.conditional.critRange;
+}
+
+/** Indices of the dice a keep/drop modifier keeps, among those entered. Empty without one. */
+function keptIndices(row) {
+  if (!row.keep) return new Set();
+  const entered = row.values
+    .map((text, index) => ({ value: parseFace(text, row.faces), index }))
+    .filter(({ value }) => Number.isInteger(value));
+  entered.sort((a, b) => (row.keep.mode === "high" ? b.value - a.value : a.value - b.value));
+  return new Set(entered.slice(0, row.keep.n).map(({ index }) => index));
 }
 
 /**

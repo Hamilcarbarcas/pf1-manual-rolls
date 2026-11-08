@@ -3,12 +3,16 @@
   <section class="group" data-group-id="{{group.id}}">
     <header class="group-title">{{group.title}}</header>
     {{#each group.rows as |row|}}
-    <div class="row" data-kind="{{row.kind}}">
+    <div class="row{{#if row.dimmed}} dimmed{{/if}}" data-kind="{{row.kind}}" data-row="{{row.id}}">
       <span class="die">{{{row.icon}}}</span>
-      <span class="label">{{row.label}}{{#if row.extraIcon}} <i class="fa-solid {{row.extraIcon}}"></i>{{/if}}</span>
+      <span class="label">
+        {{row.label}}{{#if row.extraIcon}} <i class="fa-solid {{row.extraIcon}}"></i>{{/if}}
+        {{#if row.keepLabel}}<span class="keep">{{localize row.keepLabel}}</span>{{/if}}
+      </span>
       <span class="inputs">
         {{#each row.inputs as |input|}}
         <input type="text" inputmode="numeric" autocomplete="off" name="{{input.name}}" value="{{input.value}}"
+               class="{{#if input.kept}}kept{{/if}}" tabindex="{{#if row.dimmed}}-1{{else}}0{{/if}}"
                placeholder="{{row.denomination}}" data-row-id="{{row.id}}" data-index="{{@index}}">
         {{/each}}
       </span>

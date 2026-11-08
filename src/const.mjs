@@ -14,3 +14,6 @@ export const KINDS = Object.freeze([
 ]);
 
 export const OTHER_DIE_ICON = '<i class="fa-solid fa-dice"></i>';
+
+/** Set on the cloned rollData of a preview pass (§6.2); other modules read it to skip side effects. */
+export const PREVIEW_FLAG = "pf1ManualRollsPreview";

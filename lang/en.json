@@ -18,7 +18,18 @@
       "Title": "Manual Rolls",
       "Submit": "Submit",
       "SubmitHint": "Empty dice roll digitally.",
-      "Invalid": "That value doesn't fit the die."
+      "Invalid": "That value doesn't fit the die.",
+      "Keep": {
+        "high": "keep highest",
+        "low": "keep lowest"
+      }
+    },
+    "Dialog": {
+      "ManualRoll": "Manual roll"
+    },
+    "Label": {
+      "Critical": "Critical: {what}",
+      "OnThreat": "{what} (on {range}+)"
     }
   }
 }

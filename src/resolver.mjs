@@ -7,19 +7,61 @@
  */
 
 import { MODULE_ID } from "./const.mjs";
-import { collectDice, dieIcon, isManual } from "./decide.mjs";
+import { collectDice, dieIcon, isManual, isThrowaway, keepOf } from "./decide.mjs";
 import { promptWindow } from "./prompt-window.mjs";
+import { contextFor, currentContext, termLabel } from "./context.mjs";
+import { keysFor, slotKeys } from "./slots.mjs";
 
 const RollResolver = foundry.applications.dice.RollResolver;
 const Roll = foundry.dice.Roll;
 
 export class ManualRollResolver extends RollResolver {
-  /** Groups this Roll's rows in the window. */
-  #key = foundry.utils.randomID();
+  constructor(roll, options) {
+    super(roll, options);
+    // Read now: construction is synchronous with `evaluate`, so the ambient context is this roll's.
+    this.context = contextFor(roll);
+    this.#key = this.context.groupKey ?? foundry.utils.randomID();
+    this.preview = this.context.preview === true;
+    this.throwaway = isThrowaway(roll, this.context);
+    const dice = collectDice(roll.terms);
+    const keys = slotKeys(roll, this.context);
+    this.#termKeys = new Map(keys ? dice.map((term, i) => [term, keys[i]]) : []);
+  }
+
+  /** Groups rows in the window: one action or batch shares a key (§5 late rows). */
+  #key;
+
+  /** @type {Map<DiceTerm, string>} Slot key per term known at construction (§6.5). */
+  #termKeys;
+
+  /** Where slot faces live: the action's batch, or an expected-dice batch's (§6.3). */
+  #batch = null;
 
   /** @override */
   async awaitFulfillment() {
-    await this.#fulfill(collectDice(this.roll.terms));
+    const terms = collectDice(this.roll.terms);
+    if (this.preview) {
+      this.#fillPreview(terms);
+      if (!this.throwaway) {
+        this.context.batch?.record(this.roll, this.context, this.#termKeys, (term) => isManual(term, this.context));
+      }
+      return;
+    }
+    await this.#claimExpected(terms);
+    await this.#fulfill(terms);
+  }
+
+  /** Inside an expected-dice batch: wait for its prompt, then take one expected roll's keys. */
+  async #claimExpected(terms) {
+    const expectation = this.context.expectation;
+    if (!expectation) return;
+    await expectation.ready();
+    const base = expectation.claim(this.roll, this.context);
+    if (base) {
+      const keys = keysFor(base, terms);
+      this.#termKeys = new Map(terms.map((term, i) => [term, keys[i]]));
+    }
+    this.#batch = expectation.batch;
   }
 
   /**
@@ -30,7 +72,8 @@ export class ManualRollResolver extends RollResolver {
     if (!(term instanceof foundry.dice.terms.DiceTerm)) {
       throw new Error("Only DiceTerm instances may be added to the RollResolver.");
     }
-    await this.#fulfill([term]);
+    if (this.preview) this.#fillPreview([term]);
+    else await this.#fulfill([term]);
   }
 
   /**
@@ -59,14 +102,34 @@ export class ManualRollResolver extends RollResolver {
     return this;
   }
 
-  /** Prompt for every manual die among `terms` still missing faces, then fill them. */
+  /**
+   * Preview faces: the attack's dice roll their maximum so the preview always threatens and
+   * reaches the confirmation and crit damage (§6.2); everything else rolls 1, which never explodes.
+   */
+  #fillPreview(terms) {
+    const face = (term) => (this.context.kind === "attack" ? term.faces : 1);
+    for (const term of terms) {
+      term._id ??= foundry.utils.randomID();
+      while (term.results.length < Math.abs(term.number)) term.results.push({ result: face(term), active: true });
+    }
+  }
+
+  /** Fill every manual die among `terms`: from its slot's faces where they fit, else by prompting. */
   async #fulfill(terms) {
+    const batch = this.#batch ?? this.context.batch;
     const manual = [];
     for (const term of terms) {
       if (term._id) continue;
       term._id = foundry.utils.randomID();
-      if (!isManual(term, this.roll)) continue;
+      if (this.throwaway || !isManual(term, this.context)) continue;
       term.method = "manual";
+      const stored = batch?.faces.get(this.#termKeys.get(term));
+      if (stored) {
+        const number = Math.abs(term.number);
+        for (let j = term.results.length; j < Math.min(number, stored.length); j++) {
+          term.results.push({ result: stored[j], active: true });
+        }
+      }
       if (Math.abs(term.number) > term.results.length) manual.push(term);
     }
     if (!manual.length) return;
@@ -75,31 +138,42 @@ export class ManualRollResolver extends RollResolver {
     const faces = await this.#prompt(manual, (term) => Math.abs(term.number) - term.results.length);
     manual.forEach((term, i) => {
       for (const result of faces[i]) term.results.push({ result, active: true });
+      const key = this.#termKeys.get(term);
+      if (batch && key) batch.faces.set(key, term.results.map((r) => r.result));
     });
   }
 
   /** @returns {Promise<number[][]>} Faces per term, in order. */
   #prompt(terms, count, extra = null) {
     const rows = terms.map((term) => ({
-      label: rowLabel(term),
-      kind: "other",
+      label: termLabel(term, this.context),
+      kind: this.context.kind,
       faces: term.faces,
       denomination: `d${term.faces}`,
       icon: dieIcon(term),
       count: count(term),
+      keep: keepOf(term),
       randomFace: () => term.randomFace(),
       extra,
     }));
-    return Promise.all(promptWindow().request(this.#key, groupTitle(this.roll), rows));
+    return Promise.all(promptWindow().request(this.#key, this.context.title, rows));
   }
 }
 
-function groupTitle(roll) {
-  return roll.options?.flavor || roll.formula;
-}
-
-function rowLabel(term) {
-  return term.flavor ? `${term.expression} ${term.flavor}` : term.expression;
+/**
+ * T2: a confirmation replaced with `allowInteractive: false` (roll-bonuses Snake Sidewind) reuses
+ * the confirmation faces already entered for this attack. §6.5
+ */
+function reusedFace(term) {
+  const ctx = currentContext();
+  const roll = term._root;
+  if (!ctx?.batch || ctx.preview || !(roll instanceof pf1.dice.D20RollPF)) return undefined;
+  if (!/:(attack|confirm)$/.test(ctx.slotBase ?? "")) return undefined;
+  const keys = slotKeys(roll, ctx);
+  const key = keys?.[collectDice(roll.terms).indexOf(term)];
+  const face = key ? ctx.batch.faces.get(key)?.[term.results.length] : undefined;
+  if (face !== undefined) term.method = "manual";
+  return face;
 }
 
 /** True when core's per-die config names another interactive method (a connected-dice module). */
@@ -127,8 +201,10 @@ export function registerResolver() {
     "foundry.dice.terms.DiceTerm.prototype._roll",
     function (wrapped, options = {}) {
       const resolver = this.resolver;
+      if (!resolver) return reusedFace(this) ?? wrapped(options);
       if (!(resolver instanceof ManualRollResolver)) return wrapped(options);
-      if (this.method === "manual" && isManual(this, resolver.roll)) {
+      if (resolver.preview) return 1;
+      if (!resolver.throwaway && this.method === "manual" && isManual(this, resolver.context)) {
         return resolver.resolveResult(this, "manual", options);
       }
       const fallback = CONFIG.Dice.fulfillment.methods[CONFIG.Dice.fulfillment.defaultMethod];
