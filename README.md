@@ -57,6 +57,8 @@ per die.
 - Type each value. Once a value is complete, the cursor moves to the next box.
 - On a d10, type 0 for 10. On a d100, type 00 for 100.
 - **Enter** or **Submit** sends the group. Boxes left empty roll digitally.
+- On the chat card, dice you typed show the keyboard icon. A group of dice with any box left empty
+  doesn't, since it wasn't all rolled by hand.
 - Closing the window submits everything in it the same way.
 - An exploding or rerolled die asks for its extra value as it comes up.
 
@@ -89,6 +91,9 @@ Throw them all, type them in, submit once.
   instead.
 - Anything the window couldn't foresee (a die that explodes, a skill check made during the attack)
   is asked for in a follow-up row under the same heading.
+- With [PF1 Sequential Attacks](https://github.com/Hamilcarbarcas/pf1-sequential-attacks), **Roll
+  Next Attack** asks for that attack's dice in one prompt, and **Roll All Remaining** asks for every
+  remaining attack's dice in one prompt, both weapons of a two-weapon routine included.
 
 Critical damage that Critical Effects defers is rolled later, from its own button, and asked for
 then.
@@ -139,3 +144,19 @@ await game.pf1ManualRolls.expect(
 A roll is matched to its row by who rolls it (the speaker's token, else actor) when PF1 says so,
 otherwise to the next unused row with the same dice. `game.pf1ManualRolls.isEnabled()` and
 `setEnabled(value)` read and set the toggle.
+
+For modules that build attacks themselves instead of through PF1's own full attack,
+`game.pf1ManualRolls.attackSession()` gives one prompt across any number of actions:
+
+```js
+const session = game.pf1ManualRolls?.attackSession?.(); // null when the user can't roll manually
+if (session) {
+  // Same code that builds the attacks, run on a copy: nothing is rolled for real.
+  await session.preview("main:", actionUse, (copy) => buildAttacks(copy));
+  await session.prompt();
+  await session.run("main:", actionUse, () => buildAttacks(actionUse));
+} else await buildAttacks(actionUse);
+```
+
+The prefix keeps each action's dice apart within one session. `copyAttack(atk)` copies an attack
+entry for the preview.

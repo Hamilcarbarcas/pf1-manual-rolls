@@ -3,14 +3,16 @@
  * DESIGN.md §6.2, §6.5.
  *
  * Term key: `{base}:d{faces}:{k}`, k = k-th die of that size in its Roll.
- * Base: `a{i}:attack` / `a{i}:confirm` for a D20RollPF in an attack context;
- * `a{i}:damage:{pass}:{part}` / `a{i}:critDamage:{pass}:{part}` for a DamageRoll in a damage context.
+ * Base: `{p}a{i}:attack` / `{p}a{i}:confirm` for a D20RollPF in an attack context;
+ * `{p}a{i}:damage:{pass}:{part}` / `{p}a{i}:critDamage:{pass}:{part}` for a DamageRoll in a damage
+ * context. `{p}` is the action's prefix when one batch covers several actions (§11.5).
+ * An inner Roll evaluated while a damage part rolls (PF1's `sizeRoll()` result) is keyed under
+ * that part: `{part base}:n{k}` (§11.7).
  * A replacement Roll for the same job (roll-bonuses Finesse/Agile, metamagic) lands on the same key,
  * so it reuses the faces instead of prompting again.
  */
 
 import { collectDice, dieIcon, keepOf } from "./decide.mjs";
-import { termLabel } from "./context.mjs";
 
 export class Batch {
   /** @type {Map<string, object>} termKey → slot recorded by the preview */
@@ -19,7 +21,7 @@ export class Batch {
   /** @type {Map<string, number[]>} termKey → faces, entered up front or at a late prompt */
   faces = new Map();
 
-  /** @type {Map<number, {ref: string, critRange: number}>} attack index → its d20 and threat range */
+  /** @type {Map<string, {ref: string, critRange: number}>} attack key → its d20 and threat range */
   threats = new Map();
 
   /**
@@ -29,20 +31,21 @@ export class Batch {
    * @param {object} ctx
    * @param {Map<DiceTerm, string>} termKeys
    * @param {(term: DiceTerm) => boolean} isManual
+   * @param {(term: DiceTerm) => string} labelOf
    */
-  record(roll, ctx, termKeys, isManual) {
+  record(roll, ctx, termKeys, isManual, labelOf) {
     for (const [term, ref] of termKeys) {
       if (!ref || !isManual(term)) continue;
       this.slots.set(ref, {
         ref,
-        label: termLabel(term, ctx),
+        label: labelOf(term),
         kind: ctx.kind,
         faces: term.faces,
         denomination: `d${term.faces}`,
         icon: dieIcon(term),
         count: Math.abs(term.number),
         keep: keepOf(term),
-        attackIndex: ctx.attackIndex,
+        attackKey: ctx.attackKey,
         conditional: /:(confirm|critDamage):/.test(ref),
         randomFace: () => term.randomFace(),
       });
@@ -50,7 +53,7 @@ export class Batch {
 
     const d20 = roll.terms[0];
     if (ctx.kind === "attack" && roll instanceof pf1.dice.D20RollPF && termKeys.get(d20)) {
-      this.threats.set(ctx.attackIndex, { ref: termKeys.get(d20), critRange: Number(roll.options?.critical) });
+      this.threats.set(ctx.attackKey, { ref: termKeys.get(d20), critRange: Number(roll.options?.critical) });
     }
   }
 }
@@ -79,7 +82,11 @@ function slotBase(roll, ctx) {
     return roll instanceof pf1.dice.D20RollPF ? ctx.slotBase : null;
   }
   const pass = ctx.pass;
-  if (!pass || !(roll instanceof pf1.dice.DamageRoll)) return null;
+  if (!pass) return null;
+  if (!(roll instanceof pf1.dice.DamageRoll)) {
+    if (!pass.current) return null;
+    return `${ctx.slotBase}:${pass.index}:${pass.currentPart}:n${pass.nested++}`;
+  }
 
   let part;
   if (pass.next < pass.parts.length) {
@@ -91,6 +98,10 @@ function slotBase(roll, ctx) {
     if (part < 0) part = pass.rolls.findIndex((r) => r && sameDice(r, roll));
     if (part < 0) return null;
   }
+  // Inner rolls that follow belong to this part, replacement included, so they share keys.
+  pass.current = roll;
+  pass.currentPart = part;
+  pass.nested = 0;
   return `${ctx.slotBase}:${pass.index}:${part}`;
 }
 

@@ -19,6 +19,9 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
  * @property {number} count         Inputs to show.
  * @property {() => number} randomFace  Fills an input left empty.
  * @property {"reroll"|"explode"} [extra]  Marks a single die added by a modifier.
+ *
+ * A row resolves to its faces, an array carrying `typed`: one flag per die, false where the box
+ * was left empty and the face rolled digitally.
  * @property {string} [ref]  Slot key; conditional rows point at another row's ref.
  * @property {{mode: "high"|"low", n: number}} [keep]  Keep/drop modifier; kept dice are highlighted.
  * @property {{ref: string, critRange: number}} [conditional]  Dimmed until the referenced d20
@@ -221,8 +224,13 @@ class PromptWindow extends HandlebarsApplicationMixin(ApplicationV2) {
 
     this.#groups.delete(group.id);
     for (const [row, values] of faces) {
-      if (!values) row.resolve(null);
-      else row.resolve(values.map((value) => (value === null || Number.isNaN(value) ? row.randomFace() : value)));
+      if (!values) {
+        row.resolve(null);
+        continue;
+      }
+      const out = values.map((value) => (Number.isInteger(value) ? value : row.randomFace()));
+      out.typed = values.map((value) => Number.isInteger(value));
+      row.resolve(out);
     }
     this.#focus = null;
     if (closing || !this.rendered) return;

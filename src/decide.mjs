@@ -26,10 +26,11 @@ export function isManual(term, ctx) {
 
 /**
  * A roll whose result is discarded, so it never prompts. §6.5
- * T3: critical-effects defers the confirmation and drops PF1's inline one.
+ * T3: critical-effects defers the confirmation and drops PF1's inline one. Only the inline one,
+ * rolled inside `ChatAttack#addAttack` (a `:confirm` slot); the deferred button's roll is real.
  */
 export function isThrowaway(roll, ctx) {
-  return ctx?.kind === "confirmation" && roll instanceof pf1.dice.D20RollPF && confirmationDeferred();
+  return /:confirm$/.test(ctx?.slotBase ?? "") && roll instanceof pf1.dice.D20RollPF && confirmationDeferred();
 }
 
 export function confirmationDeferred() {

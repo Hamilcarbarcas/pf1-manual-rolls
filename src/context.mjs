@@ -7,6 +7,8 @@
  */
 
 import { MODULE_ID } from "./const.mjs";
+import { Batch } from "./slots.mjs";
+import { count } from "./diagnostics.mjs";
 
 /** @type {WeakMap<Roll, object>} */
 const byRoll = new WeakMap();
@@ -67,9 +69,18 @@ export function contextFor(roll) {
     ctx.damageTypes = roll.options.damageType ?? [];
     ctx.critical = roll.isCritical;
     ctx.label = undefined;
+  } else if ((ctx.kind === "damage" || ctx.kind === "healing") && ctx.pass?.current) {
+    // An inner roll of the damage part being rolled (sizeRoll): label it as that part.
+    ctx.damageTypes = ctx.pass.current.options.damageType ?? [];
+    ctx.critical = ctx.pass.current.isCritical;
+    ctx.label = undefined;
   }
+  // A roll made outside any known flow still has its flavor, e.g. critical-effects' confirmation button.
+  const flavor = roll.options?.flavor;
+  if (!ctx.kind && flavor === game.i18n.localize("PF1.CriticalConfirmation")) ctx.kind = "confirmation";
+  if (!(roll instanceof pf1.dice.DamageRoll)) ctx.label ??= flavor || undefined;
   ctx.kind ??= "other";
-  ctx.title ??= roll.options?.flavor || roll.formula;
+  ctx.title ??= flavor || roll.formula;
   return ctx;
 }
 
@@ -126,13 +137,19 @@ export function registerContext() {
     "pf1.actionUse.ChatAttack.prototype.addAttack",
     function (wrapped, options = {}) {
       const critical = options?.critical === true;
+      count(critical ? "addAttack (confirmation)" : "addAttack");
+      const parent = ambient.at(-1);
       const attackIndex = this.rollData?.attackCount ?? 0;
+      const attackKey = `${parent?.slotPrefix ?? ""}a${attackIndex}`;
       const ctx = {
-        ...ambient.at(-1),
+        ...parent,
+        // Without an action batch, one of its own: a replacement roll still reuses faces (§6.5).
+        batch: parent?.batch ?? new Batch(),
         kind: critical ? "confirmation" : "attack",
         label: critical ? game.i18n.localize("PF1.CriticalConfirmation") : this.label || game.i18n.localize("PF1.Attack"),
         attackIndex,
-        slotBase: `a${attackIndex}:${critical ? "confirm" : "attack"}`,
+        attackKey,
+        slotBase: `${attackKey}:${critical ? "confirm" : "attack"}`,
         passes: undefined,
         pass: null,
       };
@@ -145,12 +162,17 @@ export function registerContext() {
     MODULE_ID,
     "pf1.actionUse.ChatAttack.prototype.addDamage",
     function (wrapped, options = {}) {
+      count(options?.critical === true ? "addDamage (critical)" : "addDamage");
+      const parent = ambient.at(-1);
       const attackIndex = this.rollData?.attackCount ?? 0;
+      const attackKey = `${parent?.slotPrefix ?? ""}a${attackIndex}`;
       const ctx = {
-        ...ambient.at(-1),
+        ...parent,
+        batch: parent?.batch ?? new Batch(),
         kind: this.isHealing ? "healing" : "damage",
         attackIndex,
-        slotBase: `a${attackIndex}:${options?.critical === true ? "critDamage" : "damage"}`,
+        attackKey,
+        slotBase: `${attackKey}:${options?.critical === true ? "critDamage" : "damage"}`,
         passes: 0,
         pass: null,
       };

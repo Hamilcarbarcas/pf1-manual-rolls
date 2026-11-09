@@ -11,6 +11,7 @@ import { collectDice, dieIcon, isManual, isThrowaway, keepOf } from "./decide.mj
 import { promptWindow } from "./prompt-window.mjs";
 import { contextFor, currentContext, termLabel } from "./context.mjs";
 import { keysFor, slotKeys } from "./slots.mjs";
+import { traceRoll } from "./diagnostics.mjs";
 
 const RollResolver = foundry.applications.dice.RollResolver;
 const Roll = foundry.dice.Roll;
@@ -26,7 +27,24 @@ export class ManualRollResolver extends RollResolver {
     const dice = collectDice(roll.terms);
     const keys = slotKeys(roll, this.context);
     this.#termKeys = new Map(keys ? dice.map((term, i) => [term, keys[i]]) : []);
+    this.#trace = traceRoll({
+      roll: roll.constructor.name,
+      formula: roll.formula,
+      kind: this.context.kind,
+      label: this.context.label,
+      slotBase: this.context.slotBase ?? null,
+      groupKey: this.context.groupKey ?? null,
+      batch: !!this.context.batch,
+      expectation: !!this.context.expectation,
+      choice: this.context.choice ?? null,
+      preview: this.preview,
+      throwaway: this.throwaway,
+      keys: keys ?? null,
+      dice: {},
+    });
   }
+
+  #trace;
 
   /** Groups rows in the window: one action or batch shares a key (§5 late rows). */
   #key;
@@ -43,7 +61,10 @@ export class ManualRollResolver extends RollResolver {
     if (this.preview) {
       this.#fillPreview(terms);
       if (!this.throwaway) {
-        this.context.batch?.record(this.roll, this.context, this.#termKeys, (term) => isManual(term, this.context));
+        this.context.batch?.record(
+          this.roll, this.context, this.#termKeys,
+          (term) => isManual(term, this.context), (term) => termLabel(term, this.context)
+        );
       }
       return;
     }
@@ -82,8 +103,16 @@ export class ManualRollResolver extends RollResolver {
    */
   async resolveResult(term, _method, { reroll = false, explode = false } = {}) {
     const [faces] = await this.#prompt([term], () => 1, reroll ? "reroll" : explode ? "explode" : null);
+    if (faces.typed?.[0] === false) term.method = undefined;
     return faces[0];
   }
+
+  /** Whether this resolver decided the term is rolled by hand (its extra dice prompt too). */
+  isManualTerm(term) {
+    return this.#manualTerms.has(term);
+  }
+
+  #manualTerms = new WeakSet();
 
   /** @override */
   registerResult(_method, denomination, result) {
@@ -114,33 +143,63 @@ export class ManualRollResolver extends RollResolver {
     }
   }
 
-  /** Fill every manual die among `terms`: from its slot's faces where they fit, else by prompting. */
+  /**
+   * Fill every manual die among `terms`: from its slot's faces where they fit, else by prompting.
+   * `method = "manual"` (the card's keyboard icon) only when every one of the term's dice was
+   * typed; a box left empty rolled digitally.
+   */
   async #fulfill(terms) {
     const batch = this.#batch ?? this.context.batch;
     const manual = [];
+    const typed = new Map();
     for (const term of terms) {
-      if (term._id) continue;
+      const name = term.expression;
+      if (term._id) {
+        this.#trace.dice[name] = "already handled";
+        continue;
+      }
       term._id = foundry.utils.randomID();
-      if (this.throwaway || !isManual(term, this.context)) continue;
-      term.method = "manual";
+      if (this.throwaway || !isManual(term, this.context)) {
+        this.#trace.dice[name] = this.throwaway ? "digital (thrown away)" : "digital";
+        continue;
+      }
+      this.#manualTerms.add(term);
+      const flags = term.results.map(() => false);
+      typed.set(term, flags);
       const stored = batch?.faces.get(this.#termKeys.get(term));
       if (stored) {
         const number = Math.abs(term.number);
         for (let j = term.results.length; j < Math.min(number, stored.length); j++) {
           term.results.push({ result: stored[j], active: true });
+          flags.push(stored.typed?.[j] ?? true);
         }
       }
-      if (Math.abs(term.number) > term.results.length) manual.push(term);
+      const missing = Math.abs(term.number) > term.results.length;
+      this.#trace.dice[name] = stored ? (missing ? "slot, rest prompted" : "slot") : "prompted";
+      if (missing) manual.push(term);
     }
-    if (!manual.length) return;
 
-    Roll.defaultImplementation.RESOLVERS.set(this.roll, this);
-    const faces = await this.#prompt(manual, (term) => Math.abs(term.number) - term.results.length);
-    manual.forEach((term, i) => {
-      for (const result of faces[i]) term.results.push({ result, active: true });
-      const key = this.#termKeys.get(term);
-      if (batch && key) batch.faces.set(key, term.results.map((r) => r.result));
-    });
+    if (manual.length) {
+      Roll.defaultImplementation.RESOLVERS.set(this.roll, this);
+      const faces = await this.#prompt(manual, (term) => Math.abs(term.number) - term.results.length);
+      manual.forEach((term, i) => {
+        const flags = typed.get(term);
+        faces[i].forEach((result, j) => {
+          term.results.push({ result, active: true });
+          flags.push(faces[i].typed?.[j] ?? true);
+        });
+        const key = this.#termKeys.get(term);
+        if (batch && key) {
+          const stored = term.results.map((r) => r.result);
+          stored.typed = flags;
+          batch.faces.set(key, stored);
+        }
+      });
+    }
+
+    for (const [term, flags] of typed) {
+      if (flags.length && flags.every(Boolean)) term.method = "manual";
+    }
   }
 
   /** @returns {Promise<number[][]>} Faces per term, in order. */
@@ -171,8 +230,9 @@ function reusedFace(term) {
   if (!/:(attack|confirm)$/.test(ctx.slotBase ?? "")) return undefined;
   const keys = slotKeys(roll, ctx);
   const key = keys?.[collectDice(roll.terms).indexOf(term)];
-  const face = key ? ctx.batch.faces.get(key)?.[term.results.length] : undefined;
-  if (face !== undefined) term.method = "manual";
+  const stored = key ? ctx.batch.faces.get(key) : undefined;
+  const face = stored?.[term.results.length];
+  if (face !== undefined && (stored.typed?.[term.results.length] ?? true)) term.method = "manual";
   return face;
 }
 
@@ -204,7 +264,7 @@ export function registerResolver() {
       if (!resolver) return reusedFace(this) ?? wrapped(options);
       if (!(resolver instanceof ManualRollResolver)) return wrapped(options);
       if (resolver.preview) return 1;
-      if (!resolver.throwaway && this.method === "manual" && isManual(this, resolver.context)) {
+      if (!resolver.throwaway && resolver.isManualTerm(this) && isManual(this, resolver.context)) {
         return resolver.resolveResult(this, "manual", options);
       }
       const fallback = CONFIG.Dice.fulfillment.methods[CONFIG.Dice.fulfillment.defaultMethod];

@@ -10,8 +10,9 @@ matching each release tag.
   on or off; the choice is saved. Right-click to choose which dice you roll by hand. Shown only to
   users with the Make Manual Rolls permission. Also on a keybinding (no default key).
 - **Prompt window** for physical dice: one row per die group with its icon, label and one box per
-  die. Typing a full value moves to the next box; Enter submits. Empty boxes roll digitally. A 0
-  reads as 10 on a d10, and 00 as 100 on a d100.
+  die. Typing a full value moves to the next box; Enter submits. Empty boxes roll digitally, and
+  their dice don't get the manual-roll icon on the card. A 0 reads as 10 on a d10, and 00 as 100 on
+  a d100.
 - Extra dice from exploding and rerolling ask for their value too.
 - **Manual roll** checkbox in PF1's check, attack and initiative dialogs, starting at the toggle's
   setting, to roll one roll by hand or digitally against the toggle.
@@ -26,6 +27,9 @@ matching each release tag.
   one row per combatant.
 - **API:** `game.pf1ManualRolls.expect(rolls, fn, { title })` asks for the dice of several rolls in
   one prompt before running them. PF1 Roll Requests uses it for Roll All and Roll NPCs.
+- **PF1 Sequential Attacks:** Roll Next Attack asks for the attack's dice in one prompt; Roll All
+  Remaining asks for every remaining attack's dice, across all the tracker's actions, in one prompt.
+  API for such modules: `game.pf1ManualRolls.attackSession()`.
 - Overrides core's Configure Dice: while the module is active, the toggle and its die filter decide
   which dice are manual.
 
